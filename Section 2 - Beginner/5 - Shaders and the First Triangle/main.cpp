@@ -1,7 +1,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
-#include <string>
+#include <cstring>
 
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
@@ -29,7 +29,14 @@ void main() {                                                         \n\
 }";
 
 // Fragment Shader
-static const char* fShader = "";
+static const char* fShader = "                                        \n\
+#version 330                                                          \n\
+                                                                      \n\
+out vec4 color;                                                       \n\
+                                                                      \n\
+void main() {                                                         \n\
+    color = vec4(1.0, 0.0, 0.0, 1.0);                                 \n\
+}";
 
 void createTriangle() {
     // Create triangle. A VAO will hold multiple VBOs and other types of buffers
@@ -40,7 +47,7 @@ void createTriangle() {
     GLfloat vertices[] = {
         // Center of screen is (0.0f, 0.0f)
         -1.0f, -1.0f, 0.0f,
-        1.0f, 1.0f, 0.0f,
+        1.0f, -1.0f, 0.0f,
         0.0f, 1.0f, 0.0f
     };
 
@@ -61,7 +68,7 @@ void createTriangle() {
 
     // Some people indent the VBO code to signal that we are working within a VAO
 
-    // Connect the vertex data to the VBO. Could also use: 9 * sizeof(GLfloat)
+    // Connect the vertex data to the VBO. Could also use: 9 * sizeof(GLfloat).
     // Static draw as opposed to dynamic draw because we won't be changing the
     // values that we put in the array. We will move the triangle around but we
     // will do that without changing the values of the points in the array
@@ -73,7 +80,7 @@ void createTriangle() {
     // 2) Size of each value that will get passed in (x, y, and z here so 3)
     // 3) The types of those values
     // 4) If want to normalize values
-    // 5) Stride length if say had vertex info then its colors, then another vertex
+    // 5) Stride length if say had vertex info, then its colors, then another vertex,
     // with its colors ... -> stride would equal 1 (Skip 1 line every time). We will
     // not be using this so equals 0 (tighly packed data)
     // 6) Offset - can start from second triple for instance. For when not drawing all
@@ -89,6 +96,86 @@ void createTriangle() {
 
     // Turning off binding of VAO
     glBindVertexArray(0);
+}
+
+void addShader(GLuint theProgram, const char* shaderCode, GLenum shaderType) {
+    // The individual shader
+    GLuint theShader = glCreateShader(shaderType);
+
+    // Array with one element (a C-string essentially) 
+    const GLchar* theCode[1];
+    theCode[0] = shaderCode;
+
+    // Length of the code string
+    GLint codeLength[1];
+    codeLength[0] = strlen(shaderCode);
+
+    // 1) The shader we are modifying the code for
+    // 2) Could have multiple strings
+    // 3) The code itself (one element array of C-strings)
+    // 4) The length of the code
+    glShaderSource(theShader, 1, theCode, codeLength);
+
+    // Actually compiles the shader code
+    glCompileShader(theShader);
+
+    GLint result = 0;
+    GLchar eLog[1024] = { 0 };
+
+    glGetShaderiv(theShader, GL_COMPILE_STATUS, &result);
+
+    if (!result) {
+        glGetShaderInfoLog(theShader, sizeof(eLog), nullptr, eLog);
+        printf("Error compiling the %d shader: '%s'\n", shaderType, eLog);
+        return;
+    }
+
+    glAttachShader(theProgram, theShader);
+}
+
+void compileShaders() {
+    // Shaders are on the graphics card. Get the ID here
+    shader = glCreateProgram();
+
+    if (!shader) {
+        printf("Error creating shader program!\n");
+        return;
+    }
+
+    // GL_VERTEX_SHADER is a built-in GLenum. So is GL_FRAGMENT_SHADER
+    addShader(shader, vShader, GL_VERTEX_SHADER);
+    addShader(shader, fShader, GL_FRAGMENT_SHADER);
+
+    // Result of functions
+    GLint result = 0;
+    // Place to log the error
+    GLchar eLog[1024] = { 0 };
+
+    // Creates executables on the graphics card by linking the pieces
+    glLinkProgram(shader);
+
+    // Check if linked or not and store this in a GLint
+    glGetProgramiv(shader, GL_LINK_STATUS, &result);
+    
+    if (!result) {
+        // Want to know log for shader program and where we will store the errors
+        glGetProgramInfoLog(shader, sizeof(eLog), nullptr, eLog);
+        printf("Error linking program: '%s'\n", eLog);
+        return;
+    }
+
+    // Checks if shader program we've created is valid in the current context that
+    // OpenGL is working in
+    glValidateProgram(shader);
+
+    // Check if validated or not
+    glGetProgramiv(shader, GL_VALIDATE_STATUS, &result);
+
+    if (!result) {
+        glGetProgramInfoLog(shader, sizeof(eLog), nullptr, eLog);
+        printf("Error vaildating program: '%s'\n", eLog);
+        return;
+    }
 }
 
 int main() {
@@ -140,6 +227,9 @@ int main() {
     // Setup Viewport size
     // Top left corner
     glViewport(0, 0, bufferWidth, bufferHeight);
+
+    createTriangle();
+    compileShaders();
     
     // Loop until window closed
     while (!glfwWindowShouldClose(mainWindow)) {
@@ -149,11 +239,36 @@ int main() {
         // Clear window
         // RGB values are between 0 and 1 not 0 and 255
         // Alpha value is how transparent it is
-        glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
         // Each pixel has color but more than that for graphical applications.
         // Has depth information in addtion for instance.
         // Here we clear just the color information
         glClear(GL_COLOR_BUFFER_BIT);
+
+        // Use the shader ID that was set up in compileShaders() for the pipeline.
+        // This is needed because you can multiple shaders. Needs to be repeatedly done
+        // again because can have multiple shaders that want to switch between
+        glUseProgram(shader);
+
+        // We are working with this particular VAO. We called this in createTriangle() so
+        // that we could define the VAO by specifying vertices. Now we define the VAO that
+        // we will be drawing
+        glBindVertexArray(VAO);
+
+        // Draw the points
+        // 1) Mode we are using. GL_TRIANGLES means each 3 sets of coordinates will be
+        // interpreted and drawn as a triangle
+        // 2) Where in the array we should start (from the beginning here)
+        // 3) Amount of points we want to draw
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        // Reset to no particular vertex array object
+        glBindVertexArray(0);
+
+        // Unassigning the shader set before. Again this is because you may want to change
+        // shaders on each iteration of the loop (but we use the same shader everytime here)
+        glUseProgram(0);
 
         // There are two scenes going on at once. The one that the user sees
         // and one that you are drawing to (can't be seen).
